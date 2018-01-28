@@ -13,14 +13,14 @@
  */
 package org.asynchttpclient.netty.channel;
 
-import org.asynchttpclient.AsyncHttpClientConfig;
-import org.asynchttpclient.exception.TooManyConnectionsException;
-import org.asynchttpclient.exception.TooManyConnectionsPerHostException;
+import static org.asynchttpclient.util.ThrowableUtil.unknownStackTrace;
 
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.asynchttpclient.util.ThrowableUtil.unknownStackTrace;
+import org.asynchttpclient.AsyncHttpClientConfig;
+import org.asynchttpclient.exception.TooManyConnectionsException;
+import org.asynchttpclient.exception.TooManyConnectionsPerHostException;
 
 /**
  * Max connections and max-per-host connections limiter.
@@ -29,53 +29,51 @@ import static org.asynchttpclient.util.ThrowableUtil.unknownStackTrace;
  */
 public class ConnectionSemaphore {
 
-  private final NonBlockingSemaphoreLike freeChannels;
-  private final int maxConnectionsPerHost;
-  private final ConcurrentHashMap<Object, NonBlockingSemaphore> freeChannelsPerHost = new ConcurrentHashMap<>();
-  private final IOException tooManyConnections;
-  private final IOException tooManyConnectionsPerHost;
+    private final int maxTotalConnections;
+    private final NonBlockingSemaphoreLike freeChannels;
+    private final int maxConnectionsPerHost;
+    private final ConcurrentHashMap<Object, NonBlockingSemaphore> freeChannelsPerHost = new ConcurrentHashMap<>();
 
-  private ConnectionSemaphore(AsyncHttpClientConfig config) {
-    tooManyConnections = unknownStackTrace(new TooManyConnectionsException(config.getMaxConnections()), ConnectionSemaphore.class, "acquireChannelLock");
-    tooManyConnectionsPerHost = unknownStackTrace(new TooManyConnectionsPerHostException(config.getMaxConnectionsPerHost()), ConnectionSemaphore.class, "acquireChannelLock");
-    int maxTotalConnections = config.getMaxConnections();
-    maxConnectionsPerHost = config.getMaxConnectionsPerHost();
+    private final IOException tooManyConnections;
+    private final IOException tooManyConnectionsPerHost;
 
-    freeChannels = maxTotalConnections > 0 ?
-            new NonBlockingSemaphore(config.getMaxConnections()) :
-            NonBlockingSemaphoreInfinite.INSTANCE;
-  }
+    public ConnectionSemaphore(AsyncHttpClientConfig config) {
+        tooManyConnections = unknownStackTrace(new TooManyConnectionsException(config.getMaxConnections()), ConnectionSemaphore.class, "acquireChannelLock");
+        tooManyConnectionsPerHost = unknownStackTrace(new TooManyConnectionsPerHostException(config.getMaxConnectionsPerHost()), ConnectionSemaphore.class, "acquireChannelLock");
+        maxTotalConnections = config.getMaxConnections();
+        maxConnectionsPerHost = config.getMaxConnectionsPerHost();
 
-  public static ConnectionSemaphore newConnectionSemaphore(AsyncHttpClientConfig config) {
-    return config.getMaxConnections() > 0 || config.getMaxConnectionsPerHost() > 0 ? new ConnectionSemaphore(config) : null;
-  }
-
-  private boolean tryAcquireGlobal() {
-    return freeChannels.tryAcquire();
-  }
-
-  private NonBlockingSemaphoreLike getFreeConnectionsForHost(Object partitionKey) {
-    return maxConnectionsPerHost > 0 ?
-            freeChannelsPerHost.computeIfAbsent(partitionKey, pk -> new NonBlockingSemaphore(maxConnectionsPerHost)) :
-            NonBlockingSemaphoreInfinite.INSTANCE;
-  }
-
-  private boolean tryAcquirePerHost(Object partitionKey) {
-    return getFreeConnectionsForHost(partitionKey).tryAcquire();
-  }
-
-  public void acquireChannelLock(Object partitionKey) throws IOException {
-    if (!tryAcquireGlobal())
-      throw tooManyConnections;
-    if (!tryAcquirePerHost(partitionKey)) {
-      freeChannels.release();
-
-      throw tooManyConnectionsPerHost;
+        freeChannels = maxTotalConnections > 0 ?
+                new NonBlockingSemaphore(config.getMaxConnections()) :
+                NonBlockingSemaphoreInfinite.INSTANCE;
     }
-  }
 
-  public void releaseChannelLock(Object partitionKey) {
-    freeChannels.release();
-    getFreeConnectionsForHost(partitionKey).release();
-  }
+    private boolean tryAcquireGlobal() {
+        return freeChannels.tryAcquire();
+    }
+
+    private NonBlockingSemaphoreLike getFreeConnectionsForHost(Object partitionKey) {
+        return maxConnectionsPerHost > 0 ?
+                freeChannelsPerHost.computeIfAbsent(partitionKey, pk -> new NonBlockingSemaphore(maxConnectionsPerHost)) :
+                NonBlockingSemaphoreInfinite.INSTANCE;
+    }
+
+    private boolean tryAcquirePerHost(Object partitionKey) {
+        return getFreeConnectionsForHost(partitionKey).tryAcquire();
+    }
+
+    public void acquireChannelLock(Object partitionKey) throws IOException {
+        if (!tryAcquireGlobal())
+            throw tooManyConnections;
+        if (!tryAcquirePerHost(partitionKey)) {
+            freeChannels.release();
+
+            throw tooManyConnectionsPerHost;
+        }
+    }
+
+    public void releaseChannelLock(Object partitionKey) {
+        freeChannels.release();
+        getFreeConnectionsForHost(partitionKey).release();
+    }
 }

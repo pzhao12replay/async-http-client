@@ -13,22 +13,23 @@
  */
 package org.asynchttpclient.extras.rxjava2.maybe;
 
-import io.reactivex.MaybeEmitter;
+import static java.util.Objects.requireNonNull;
+
 import org.asynchttpclient.AsyncHandler;
 
-import static java.util.Objects.requireNonNull;
+import io.reactivex.MaybeEmitter;
 
 public final class MaybeAsyncHandlerBridge<T> extends AbstractMaybeAsyncHandlerBridge<T> {
 
-  private final AsyncHandler<? extends T> delegate;
+    private final AsyncHandler<? extends T> delegate;
 
-  public MaybeAsyncHandlerBridge(MaybeEmitter<T> emitter, AsyncHandler<? extends T> delegate) {
-    super(emitter);
-    this.delegate = requireNonNull(delegate);
-  }
+    public MaybeAsyncHandlerBridge(MaybeEmitter<T> emitter, AsyncHandler<? extends T> delegate) {
+        super(emitter);
+        this.delegate = requireNonNull(delegate);
+    }
 
-  @Override
-  protected AsyncHandler<? extends T> delegate() {
-    return delegate;
-  }
+    @Override
+    protected AsyncHandler<? extends T> delegate() {
+        return delegate;
+    }
 }

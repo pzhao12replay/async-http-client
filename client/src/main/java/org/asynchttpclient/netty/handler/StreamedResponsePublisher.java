@@ -13,8 +13,10 @@
 package org.asynchttpclient.netty.handler;
 
 import com.typesafe.netty.HandlerPublisher;
+
 import io.netty.channel.Channel;
 import io.netty.util.concurrent.EventExecutor;
+
 import org.asynchttpclient.HttpResponseBodyPart;
 import org.asynchttpclient.netty.NettyResponseFuture;
 import org.asynchttpclient.netty.channel.ChannelManager;
@@ -23,35 +25,36 @@ import org.slf4j.LoggerFactory;
 
 public class StreamedResponsePublisher extends HandlerPublisher<HttpResponseBodyPart> {
 
-  protected final Logger logger = LoggerFactory.getLogger(getClass());
+    protected final Logger logger = LoggerFactory.getLogger(getClass());
 
-  private final ChannelManager channelManager;
-  private final NettyResponseFuture<?> future;
-  private final Channel channel;
+    private final ChannelManager channelManager;
+    private final NettyResponseFuture<?> future;
+    private final Channel channel;
 
-  StreamedResponsePublisher(EventExecutor executor, ChannelManager channelManager, NettyResponseFuture<?> future, Channel channel) {
-    super(executor, HttpResponseBodyPart.class);
-    this.channelManager = channelManager;
-    this.future = future;
-    this.channel = channel;
-  }
-
-  @Override
-  protected void cancelled() {
-    logger.debug("Subscriber cancelled, ignoring the rest of the body");
-
-    try {
-      future.done();
-    } catch (Exception t) {
-      // Never propagate exception once we know we are done.
-      logger.debug(t.getMessage(), t);
+    public StreamedResponsePublisher(EventExecutor executor, ChannelManager channelManager, NettyResponseFuture<?> future, Channel channel) {
+        super(executor, HttpResponseBodyPart.class);
+        this.channelManager = channelManager;
+        this.future = future;
+        this.channel = channel;
     }
 
-    // The subscriber cancelled early - this channel is dead and should be closed.
-    channelManager.closeChannel(channel);
-  }
+    @Override
+    protected void cancelled() {
+        logger.debug("Subscriber cancelled, ignoring the rest of the body");
 
-  NettyResponseFuture<?> future() {
-    return future;
-  }
+        // The subscriber cancelled early, we need to drain the remaining elements from the stream
+        channelManager.drainChannelAndOffer(channel, future);
+        channel.pipeline().remove(StreamedResponsePublisher.class);
+
+        try {
+            future.done();
+        } catch (Exception t) {
+            // Never propagate exception once we know we are done.
+            logger.debug(t.getMessage(), t);
+        }
+    }
+
+    NettyResponseFuture<?> future() {
+        return future;
+    }
 }

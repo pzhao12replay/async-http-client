@@ -13,97 +13,69 @@
  */
 package org.asynchttpclient.request.body.multipart;
 
-import org.asynchttpclient.*;
+import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_LENGTH;
+import static io.netty.handler.codec.http.HttpHeaderValues.APPLICATION_OCTET_STREAM;
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.asynchttpclient.Dsl.*;
+import static org.asynchttpclient.test.TestUtils.*;
+import static org.testng.Assert.assertEquals;
+
+import java.io.File;
+
+import org.asynchttpclient.AbstractBasicTest;
+import org.asynchttpclient.AsyncHttpClient;
+import org.asynchttpclient.BasicAuthTest;
+import org.asynchttpclient.Response;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.handler.AbstractHandler;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.concurrent.ExecutionException;
-import java.util.function.Function;
-
-import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_LENGTH;
-import static io.netty.handler.codec.http.HttpHeaderNames.EXPECT;
-import static io.netty.handler.codec.http.HttpHeaderValues.APPLICATION_OCTET_STREAM;
-import static io.netty.handler.codec.http.HttpHeaderValues.CONTINUE;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.asynchttpclient.Dsl.asyncHttpClient;
-import static org.asynchttpclient.Dsl.basicAuthRealm;
-import static org.asynchttpclient.test.TestUtils.*;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
-
 public class MultipartBasicAuthTest extends AbstractBasicTest {
 
-  @BeforeClass(alwaysRun = true)
-  @Override
-  public void setUpGlobal() throws Exception {
-    server = new Server();
-    ServerConnector connector1 = addHttpConnector(server);
-    addBasicAuthHandler(server, configureHandler());
-    server.start();
-    port1 = connector1.getLocalPort();
-    logger.info("Local HTTP server started successfully");
-  }
+    @BeforeClass(alwaysRun = true)
+    @Override
+    public void setUpGlobal() throws Exception {
 
-  @Override
-  public AbstractHandler configureHandler() throws Exception {
-    return new BasicAuthTest.SimpleHandler();
-  }
+        server = new Server();
+        ServerConnector connector1 = addHttpConnector(server);
+        addBasicAuthHandler(server, configureHandler());
+        server.start();
+        port1 = connector1.getLocalPort();
+        logger.info("Local HTTP server started successfully");
+    }
 
-  private void expectBrokenPipe(Function<BoundRequestBuilder, BoundRequestBuilder> f) throws Exception {
-    File file = createTempFile(1024 * 1024);
+    @Override
+    public AbstractHandler configureHandler() throws Exception {
+        return new BasicAuthTest.SimpleHandler();
+    }
 
-    Throwable cause = null;
-    try (AsyncHttpClient client = asyncHttpClient()) {
-      try {
-        for (int i = 0; i < 20; i++) {
-          f.apply(client.preparePut(getTargetUrl())
-                  .addBodyPart(new FilePart("test", file, APPLICATION_OCTET_STREAM.toString(), UTF_8)))
-                  .execute().get();
+    @Test(groups = "standalone", enabled = false)
+    public void testNoRealm() throws Exception {
+        File file = createTempFile(1024 * 1024);
+
+        try (AsyncHttpClient client = asyncHttpClient()) {
+            for (int i = 0; i < 20; i++) {
+                Response response = client.preparePut(getTargetUrl())//
+                        .addBodyPart(new FilePart("test", file, APPLICATION_OCTET_STREAM.toString(), UTF_8)).execute().get();
+                assertEquals(response.getStatusCode(), 401);
+            }
         }
-      } catch (ExecutionException e) {
-        cause = e.getCause();
-      }
     }
 
-    assertTrue(cause instanceof IOException, "Expected an IOException");
-  }
+    @Test(groups = "standalone", enabled = false)
+    public void testAuthorizedRealm() throws Exception {
+        File file = createTempFile(1024 * 1024);
 
-  @Test
-  public void noRealmCausesServerToCloseSocket() throws Exception {
-    expectBrokenPipe(rb -> rb);
-  }
-
-  @Test
-  public void unauthorizedNonPreemptiveRealmCausesServerToCloseSocket() throws Exception {
-    expectBrokenPipe(rb -> rb.setRealm(basicAuthRealm(USER, ADMIN)));
-  }
-
-  private void expectSuccess(Function<BoundRequestBuilder, BoundRequestBuilder> f) throws Exception {
-    File file = createTempFile(1024 * 1024);
-
-    try (AsyncHttpClient client = asyncHttpClient()) {
-      for (int i = 0; i < 20; i++) {
-        Response response = f.apply(client.preparePut(getTargetUrl())
-                .addBodyPart(new FilePart("test", file, APPLICATION_OCTET_STREAM.toString(), UTF_8)))
-                .execute().get();
-        assertEquals(response.getStatusCode(), 200);
-        assertEquals(response.getResponseBodyAsBytes().length, Integer.valueOf(response.getHeader("X-" + CONTENT_LENGTH)).intValue());
-      }
+        try (AsyncHttpClient client = asyncHttpClient()) {
+            for (int i = 0; i < 20; i++) {
+                Response response = client.preparePut(getTargetUrl())//
+                        .setRealm(basicAuthRealm(USER, ADMIN).build())//
+                        .addBodyPart(new FilePart("test", file, APPLICATION_OCTET_STREAM.toString(), UTF_8)).execute().get();
+                assertEquals(response.getStatusCode(), 200);
+                assertEquals(response.getResponseBodyAsBytes().length, Integer.valueOf(response.getHeader("X-" + CONTENT_LENGTH)).intValue());
+            }
+        }
     }
-  }
-
-  @Test
-  public void authorizedPreemptiveRealmWorks() throws Exception {
-    expectSuccess(rb -> rb.setRealm(basicAuthRealm(USER, ADMIN).setUsePreemptiveAuth(true)));
-  }
-
-  @Test
-  public void authorizedNonPreemptiveRealmWorksWithExpectContinue() throws Exception {
-    expectSuccess(rb -> rb.setRealm(basicAuthRealm(USER, ADMIN)).setHeader(EXPECT, CONTINUE));
-  }
 }

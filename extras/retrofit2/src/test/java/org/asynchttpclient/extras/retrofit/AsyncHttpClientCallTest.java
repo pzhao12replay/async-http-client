@@ -12,16 +12,11 @@
  */
 package org.asynchttpclient.extras.retrofit;
 
+import static org.asynchttpclient.extras.retrofit.AsyncHttpClientCall.*;
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.*;
+import static org.testng.Assert.assertTrue;
 import io.netty.handler.codec.http.EmptyHttpHeaders;
-import lombok.val;
-import okhttp3.Request;
-import org.asynchttpclient.AsyncCompletionHandler;
-import org.asynchttpclient.AsyncHttpClient;
-import org.asynchttpclient.BoundRequestBuilder;
-import org.asynchttpclient.Response;
-import org.testng.Assert;
-import org.testng.annotations.DataProvider;
-import org.testng.annotations.Test;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -31,12 +26,16 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
-import static org.asynchttpclient.extras.retrofit.AsyncHttpClientCall.runConsumer;
-import static org.asynchttpclient.extras.retrofit.AsyncHttpClientCall.runConsumers;
-import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-import static org.testng.Assert.assertTrue;
+import lombok.val;
+import okhttp3.Request;
+
+import org.asynchttpclient.AsyncCompletionHandler;
+import org.asynchttpclient.AsyncHttpClient;
+import org.asynchttpclient.BoundRequestBuilder;
+import org.asynchttpclient.Response;
+import org.testng.Assert;
+import org.testng.annotations.DataProvider;
+import org.testng.annotations.Test;
 
 public class AsyncHttpClientCallTest {
     static final Request REQUEST = new Request.Builder().url("http://www.google.com/").build();

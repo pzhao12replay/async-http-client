@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 AsyncHttpClient Project. All rights reserved.
+ * Copyright (c) 2010-2014 Sonatype, Inc. All rights reserved.
  *
  * This program is licensed to you under the Apache License Version 2.0,
  * and you may not use this file except in compliance with the Apache License Version 2.0.
@@ -12,10 +12,12 @@
  */
 package org.asynchttpclient.extras.registry;
 
+import org.asynchttpclient.extras.registry.AsyncHttpClientImplException;
+
 @SuppressWarnings("serial")
 public class BadAsyncHttpClientException extends AsyncHttpClientImplException {
 
-  public BadAsyncHttpClientException(String msg) {
-    super(msg);
-  }
+    public BadAsyncHttpClientException(String msg) {
+        super(msg);
+    }
 }

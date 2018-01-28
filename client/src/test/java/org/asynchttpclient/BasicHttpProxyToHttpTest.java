@@ -13,6 +13,18 @@
  */
 package org.asynchttpclient;
 
+import static io.netty.handler.codec.http.HttpHeaderNames.*;
+import static org.asynchttpclient.Dsl.*;
+import static org.asynchttpclient.test.TestUtils.addHttpConnector;
+
+import java.io.IOException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
 import org.asynchttpclient.Realm.AuthScheme;
 import org.asynchttpclient.test.EchoHandler;
 import org.eclipse.jetty.proxy.ProxyServlet;
@@ -27,106 +39,94 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-
-import static io.netty.handler.codec.http.HttpHeaderNames.PROXY_AUTHENTICATE;
-import static io.netty.handler.codec.http.HttpHeaderNames.PROXY_AUTHORIZATION;
-import static org.asynchttpclient.Dsl.*;
-import static org.asynchttpclient.test.TestUtils.addHttpConnector;
-
 /**
  * Test that validates that when having an HTTP proxy and trying to access an HTTP through the proxy the proxy credentials should be passed after it gets a 407 response.
  */
 public class BasicHttpProxyToHttpTest {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(BasicHttpProxyToHttpTest.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(BasicHttpProxyToHttpTest.class);
 
-  private int httpPort;
-  private int proxyPort;
+    private int httpPort;
+    private int proxyPort;
 
-  private Server httpServer;
-  private Server proxy;
+    private Server httpServer;
+    private Server proxy;
 
-  @BeforeClass
-  public void setUpGlobal() throws Exception {
+    @SuppressWarnings("serial")
+    public static class BasicAuthProxyServlet extends ProxyServlet {
 
-    httpServer = new Server();
-    ServerConnector connector1 = addHttpConnector(httpServer);
-    httpServer.setHandler(new EchoHandler());
-    httpServer.start();
-    httpPort = connector1.getLocalPort();
+        @Override
+        protected void service(final HttpServletRequest request, final HttpServletResponse response) throws ServletException, IOException {
+            LOGGER.debug(">>> got a request !");
 
-    proxy = new Server();
-    ServerConnector connector2 = addHttpConnector(proxy);
-    ServletHandler servletHandler = new ServletHandler();
-    ServletHolder servletHolder = servletHandler.addServletWithMapping(BasicAuthProxyServlet.class, "/*");
-    servletHolder.setInitParameter("maxThreads", "20");
-    proxy.setHandler(servletHandler);
-    proxy.start();
-    proxyPort = connector2.getLocalPort();
+            String authorization = request.getHeader(PROXY_AUTHORIZATION.toString());
+            if (authorization == null) {
+                response.setStatus(HttpServletResponse.SC_PROXY_AUTHENTICATION_REQUIRED);
+                response.setHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"Fake Realm\"");
+                response.getOutputStream().flush();
 
-    LOGGER.info("Local HTTP Server (" + httpPort + "), Proxy (" + proxyPort + ") started successfully");
-  }
+            } else if (authorization.equals("Basic am9obmRvZTpwYXNz")) {
+                super.service(request, response);
 
-  @AfterClass(alwaysRun = true)
-  public void tearDownGlobal() {
-    if (proxy != null) {
-      try {
-        proxy.stop();
-      } catch (Exception e) {
-        LOGGER.error("Failed to properly close proxy", e);
-      }
+            } else {
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.getOutputStream().flush();
+            }
+        }
     }
-    if (httpServer != null) {
-      try {
-        httpServer.stop();
-      } catch (Exception e) {
-        LOGGER.error("Failed to properly close server", e);
-      }
+
+    @BeforeClass
+    public void setUpGlobal() throws Exception {
+
+        httpServer = new Server();
+        ServerConnector connector1 = addHttpConnector(httpServer);
+        httpServer.setHandler(new EchoHandler());
+        httpServer.start();
+        httpPort = connector1.getLocalPort();
+
+        proxy = new Server();
+        ServerConnector connector2 = addHttpConnector(proxy);
+        ServletHandler servletHandler = new ServletHandler();
+        ServletHolder servletHolder = servletHandler.addServletWithMapping(BasicAuthProxyServlet.class, "/*");
+        servletHolder.setInitParameter("maxThreads", "20");
+        proxy.setHandler(servletHandler);
+        proxy.start();
+        proxyPort = connector2.getLocalPort();
+
+        LOGGER.info("Local HTTP Server (" + httpPort + "), Proxy (" + proxyPort + ") started successfully");
     }
-  }
 
-  @Test
-  public void nonPreemptiveProxyAuthWithPlainHttpTarget() throws IOException, InterruptedException, ExecutionException {
-    try (AsyncHttpClient client = asyncHttpClient()) {
-      String targetUrl = "http://localhost:" + httpPort + "/foo/bar";
-      Request request = get(targetUrl)
-              .setProxyServer(proxyServer("127.0.0.1", proxyPort).setRealm(realm(AuthScheme.BASIC, "johndoe", "pass")))
-              // .setRealm(realm(AuthScheme.BASIC, "user", "passwd"))
-              .build();
-      Future<Response> responseFuture = client.executeRequest(request);
-      Response response = responseFuture.get();
-
-      Assert.assertEquals(response.getStatusCode(), HttpServletResponse.SC_OK);
-      Assert.assertEquals("/foo/bar", response.getHeader("X-pathInfo"));
+    @AfterClass(alwaysRun = true)
+    public void tearDownGlobal() throws Exception {
+        if (proxy != null) {
+            try {
+                proxy.stop();
+            } catch (Exception e) {
+                LOGGER.error("Failed to properly close proxy", e);
+            }
+        }
+        if (httpServer != null) {
+            try {
+                httpServer.stop();
+            } catch (Exception e) {
+                LOGGER.error("Failed to properly close server", e);
+            }
+        }
     }
-  }
 
-  @SuppressWarnings("serial")
-  public static class BasicAuthProxyServlet extends ProxyServlet {
+    @Test
+    public void nonPreemptiveProxyAuthWithPlainHttpTarget() throws IOException, InterruptedException, ExecutionException {
+        try (AsyncHttpClient client = asyncHttpClient()) {
+            String targetUrl = "http://localhost:" + httpPort + "/foo/bar";
+            Request request = get(targetUrl)//
+                    .setProxyServer(proxyServer("127.0.0.1", proxyPort).setRealm(realm(AuthScheme.BASIC, "johndoe", "pass")))//
+                    // .setRealm(realm(AuthScheme.BASIC, "user", "passwd"))//
+                    .build();
+            Future<Response> responseFuture = client.executeRequest(request);
+            Response response = responseFuture.get();
 
-    @Override
-    protected void service(final HttpServletRequest request, final HttpServletResponse response) throws ServletException, IOException {
-      LOGGER.debug(">>> got a request !");
-
-      String authorization = request.getHeader(PROXY_AUTHORIZATION.toString());
-      if (authorization == null) {
-        response.setStatus(HttpServletResponse.SC_PROXY_AUTHENTICATION_REQUIRED);
-        response.setHeader(PROXY_AUTHENTICATE.toString(), "Basic realm=\"Fake Realm\"");
-        response.getOutputStream().flush();
-
-      } else if (authorization.equals("Basic am9obmRvZTpwYXNz")) {
-        super.service(request, response);
-
-      } else {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.getOutputStream().flush();
-      }
+            Assert.assertEquals(response.getStatusCode(), HttpServletResponse.SC_OK);
+            Assert.assertEquals("/foo/bar", response.getHeader("X-pathInfo"));
+        }
     }
-  }
 }
