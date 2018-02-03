@@ -13,14 +13,12 @@ jdk:
 - oraclejdk8
 language: java
 script:
-- touch NOW
+- touch /tmp/NOW
 - echo GIBSTUDYSTART $(date)
 - mvn test -Ptest-output
 - find $HOME/.m2 -name "_remote.repositories" | xargs rm
 - find $HOME/.m2 -name "resolver-status.properties" | xargs rm -f
 - echo GIBSTUDYEND $(date)
 - cd $TRAVIS_BUILD_DIR
-- if [ "$TRAVIS_OS_NAME" == "osx" ];        then echo TESTNUM $(find . -name TEST-*.xml
-  -newer NOW | wc -l);        else echo TESTNUM $(find -name TEST-*.xml -newer NOW
-  | wc -l);        fi
+- echo TESTNUM $(find . -name TEST-*.xml -newer /tmp/NOW | wc -l)
 sudo: false
